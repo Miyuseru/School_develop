@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猫パンチ防御ゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #87CEEB, #98FB98);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .game-container {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        .game-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .game-title {
+            font-size: 2.5em;
+            color: #FF6B6B;
+            margin: 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .score { color: #4ECDC4; }
+        .health { color: #FF6B6B; }
+        .combo { color: #FFD93D; }
+        
+        #gameCanvas {
+            border: 3px solid #333;
+            border-radius: 15px;
+            display: block;
+            margin: 0 auto;
+            background: linear-gradient(to bottom, #87CEEB, #E0F6FF);
+            cursor: crosshair;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-top: 15px;
+            color: #666;
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+        }
+        
+        .restart-btn {
+            background: #4ECDC4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+        
+        .restart-btn:hover {
+            background: #45B7AA;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            <h1 class="game-title">🐾 猫パンチ防御ゲーム 🐾</h1>
+            <div class="stats">
+                <span class="score">スコア: <span id="score">0</span></span>
+                <span class="health">体力: <span id="health">100</span></span>
+                <span class="combo">コンボ: <span id="combo">0</span></span>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas" width="760" height="500"></canvas>
+        
+        <div class="controls">
+            クリックまたはタップした場所に猫が移動して猫パンチ！連続で叩いてコンボを決めよう！
+        </div>
+        
+        <div class="game-over" id="gameOver">
+            <h2>ゲームオーバー！</h2>
+            <p>最終スコア: <span id="finalScore">0</span></p>
+            <p>最大コンボ: <span id="maxCombo">0</span></p>
+            <button class="restart-btn" onclick="restartGame()">もう一度プレイ</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // ゲーム状態
+        let gameState = {
+            score: 0,
+            health: 100,
+            combo: 0,
+            maxCombo: 0,
+            isGameOver: false,
+            lastPunchTime: 0
+        };
+        
+        // 猫の状態
+        const cat = {
+            x: canvas.width / 2,
+            y: canvas.height - 80,
+            targetX: canvas.width / 2,
+            targetY: canvas.height - 80,
+            size: 60,
+            speed: 8,
+            punchAnimation: 0,
+            punchDirection: 0
+        };
+        
+        // 敵の配列
+        let enemies = [];
+        let particles = [];
+        
+        // 敵のタイプ
+        const enemyTypes = [
+            { emoji: '🐭', speed: 2, health: 1, score: 10 },
+            { emoji: '🦔', speed: 1.5, health: 2, score: 20 },
+            { emoji: '🐍', speed: 2.5, health: 1, score: 15 },
+            { emoji: '🦇', speed: 3, health: 1, score: 25 }
+        ];
+        
+        // パーティクルクラス
+        class Particle {
+            constructor(x, y, color, text = '') {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 6;
+                this.vy = (Math.random() - 0.5) * 6 - 2;
+                this.life = 30;
+                this.maxLife = 30;
+                this.color = color;
+                this.text = text;
+            }
+            
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.2;
+                this.life--;
+            }
+            
+            draw() {
+                const alpha = this.life / this.maxLife;
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                if (this.text) {
+                    ctx.fillText(this.text, this.x, this.y);
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+        
+        // 敵クラス
+        class Enemy {
+            constructor() {
+                const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                this.x = Math.random() * (canvas.width - 40);
+                this.y = -40;
+                this.speed = type.speed;
+                this.health = type.health;
+                this.maxHealth = type.health;
+                this.score = type.score;
+                this.emoji = type.emoji;
+                this.size = 30;
+                this.hitAnimation = 0;
+            }
+            
+            update() {
+                this.y += this.speed;
+                if (this.hitAnimation > 0) {
+                    this.hitAnimation--;
+                }
+            }
+            
+            draw() {
+                ctx.save();
+                if (this.hitAnimation > 0) {
+                    ctx.filter = 'brightness(200%)';
+                }
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.emoji, this.x, this.y);
+                
+                // 体力バー
+                if (this.health < this.maxHealth) {
+                    const barWidth = 30;
+                    const barHeight = 4;
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(this.x - barWidth/2, this.y - 35, barWidth, barHeight);
+                    ctx.fillStyle = 'green';
+                    ctx.fillRect(this.x - barWidth/2, this.y - 35, barWidth * (this.health / this.maxHealth), barHeight);
+                }
+                ctx.restore();
+            }
+            
+            takeDamage() {
+                this.health--;
+                this.hitAnimation = 10;
+                
+                // ヒットパーティクル
+                for (let i = 0; i < 5; i++) {
+                    particles.push(new Particle(this.x, this.y, '#FFD93D'));
+                }
+                
+                return this.health <= 0;
+            }
+        }
+        
+        // 猫を描画
+        function drawCat() {
+            ctx.save();
+            ctx.translate(cat.x, cat.y);
+            
+            // 猫の体
+            ctx.fillStyle = '#FFA500';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, cat.size/2, cat.size/2.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 猫の耳
+            ctx.fillStyle = '#FF8C00';
+            ctx.beginPath();
+            ctx.moveTo(-20, -20);
+            ctx.lineTo(-10, -35);
+            ctx.lineTo(0, -20);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(20, -20);
+            ctx.lineTo(10, -35);
+            ctx.lineTo(0, -20);
+            ctx.closePath();
+            ctx.fill();
+            
+            // 猫の顔
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(-8, -5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(8, -5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 鼻
+            ctx.fillStyle = 'pink';
+            ctx.beginPath();
+            ctx.arc(0, 5, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // パンチアニメーション
+            if (cat.punchAnimation > 0) {
+                ctx.fillStyle = '#FFD93D';
+                const punchSize = cat.punchAnimation * 2;
+                const punchX = Math.cos(cat.punchDirection) * 40;
+                const punchY = Math.sin(cat.punchDirection) * 40;
+                
+                ctx.beginPath();
+                ctx.arc(punchX, punchY, punchSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // パンチエフェクト
+                ctx.strokeStyle = '#FF6B6B';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(punchX, punchY, punchSize + 10, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                cat.punchAnimation--;
+            }
+            
+            ctx.restore();
+        }
+        
+        // 敵をスポーン
+        function spawnEnemy() {
+            if (Math.random() < 0.03) {
+                enemies.push(new Enemy());
+            }
+        }
+        
+        // 衝突判定
+        function checkCollision(x1, y1, size1, x2, y2, size2) {
+            const dx = x1 - x2;
+            const dy = y1 - y2;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < (size1 + size2) / 2;
+        }
+        
+        // 猫パンチ処理
+        function catPunch(mouseX, mouseY) {
+            if (gameState.isGameOver) return;
+            
+            // 猫の移動先を設定
+            cat.targetX = Math.max(cat.size/2, Math.min(canvas.width - cat.size/2, mouseX));
+            cat.targetY = Math.max(cat.size/2, Math.min(canvas.height - cat.size/2, mouseY));
+            
+            const dx = mouseX - cat.x;
+            const dy = mouseY - cat.y;
+            cat.punchDirection = Math.atan2(dy, dx);
+            cat.punchAnimation = 15;
+            
+            const currentTime = Date.now();
+            const timeSinceLastPunch = currentTime - gameState.lastPunchTime;
+            
+            // コンボ判定
+            if (timeSinceLastPunch < 1000) {
+                gameState.combo++;
+            } else {
+                gameState.combo = 1;
+            }
+            gameState.lastPunchTime = currentTime;
+            
+            // パンチ範囲内の敵を攻撃
+            let hitCount = 0;
+            const punchRange = 80 + (gameState.combo * 5);
+            
+            enemies = enemies.filter(enemy => {
+                const dx = enemy.x - cat.x;
+                const dy = enemy.y - cat.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= punchRange) {
+                    if (enemy.takeDamage()) {
+                        // 敵を倒した
+                        let points = enemy.score * Math.max(1, gameState.combo);
+                        gameState.score += points;
+                        
+                        // スコアパーティクル
+                        particles.push(new Particle(enemy.x, enemy.y, '#4ECDC4', `+${points}`));
+                        
+                        hitCount++;
+                        return false;
+                    }
+                }
+                return true;
+            });
+            
+            // コンボパーティクル
+            if (gameState.combo > 1) {
+                particles.push(new Particle(cat.x, cat.y - 40, '#FFD93D', `${gameState.combo} コンボ!`));
+            }
+            
+            gameState.maxCombo = Math.max(gameState.maxCombo, gameState.combo);
+        }
+        
+        // ゲームループ
+        function gameLoop() {
+            if (gameState.isGameOver) return;
+            
+            // 背景をクリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 猫の移動
+            const dx = cat.targetX - cat.x;
+            const dy = cat.targetY - cat.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > cat.speed) {
+                cat.x += (dx / distance) * cat.speed;
+                cat.y += (dy / distance) * cat.speed;
+            } else {
+                cat.x = cat.targetX;
+                cat.y = cat.targetY;
+            }
+            
+            // 敵をスポーン
+            spawnEnemy();
+            
+            // 敵を更新
+            enemies = enemies.filter(enemy => {
+                enemy.update();
+                
+                // 猫に到達したかチェック
+                if (checkCollision(enemy.x, enemy.y, enemy.size, cat.x, cat.y, cat.size)) {
+                    gameState.health -= 10;
+                    particles.push(new Particle(cat.x, cat.y, '#FF6B6B', '-10'));
+                    gameState.combo = 0; // コンボリセット
+                    return false;
+                }
+                
+                // 画面外に出たかチェック
+                if (enemy.y > canvas.height + 40) {
+                    gameState.health -= 5;
+                    gameState.combo = 0; // コンボリセット
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            // パーティクルを更新
+            particles = particles.filter(particle => {
+                particle.update();
+                particle.draw();
+                return particle.life > 0;
+            });
+            
+            // 敵を描画
+            enemies.forEach(enemy => enemy.draw());
+            
+            // 猫を描画
+            drawCat();
+            
+            // UI更新
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('health').textContent = Math.max(0, gameState.health);
+            document.getElementById('combo').textContent = gameState.combo;
+            
+            // ゲームオーバーチェック
+            if (gameState.health <= 0) {
+                gameOver();
+                return;
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // ゲームオーバー
+        function gameOver() {
+            gameState.isGameOver = true;
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('maxCombo').textContent = gameState.maxCombo;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        // ゲーム再開
+        function restartGame() {
+            gameState = {
+                score: 0,
+                health: 100,
+                combo: 0,
+                maxCombo: 0,
+                isGameOver: false,
+                lastPunchTime: 0
+            };
+            cat.x = canvas.width / 2;
+            cat.y = canvas.height - 80;
+            cat.targetX = canvas.width / 2;
+            cat.targetY = canvas.height - 80;
+            enemies = [];
+            particles = [];
+            document.getElementById('gameOver').style.display = 'none';
+            gameLoop();
+        }
+        
+        // イベントリスナー
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            catPunch(x, y);
+        });
+        
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            catPunch(x, y);
+        });
+        
+        // ゲーム開始
+        gameLoop();
+    </script>
+</body>
+</html>
